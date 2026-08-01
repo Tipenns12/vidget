@@ -4,6 +4,12 @@
 
 'use strict';
 
+// Apply theme early (before DOMContentLoaded) to prevent flash
+(function() {
+  const saved = localStorage.getItem('vg_theme') || 'dark';
+  if (saved === 'light') document.documentElement.setAttribute('data-theme', 'light');
+})();
+
 // ─── Translations ─────────────────────────────────────────────────────────────
 const LANG = {
   id: {
@@ -90,6 +96,7 @@ const LANG = {
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let currentLang      = localStorage.getItem('vg_lang') || 'id';
+let currentTheme     = localStorage.getItem('vg_theme') || 'dark';
 let currentVideoInfo = null;
 let selectedFormat   = null;
 let activeTab        = 'video';
@@ -121,6 +128,24 @@ function showToast(msg, type = '') {
   toast.classList.add('show');
   clearTimeout(_toastTimer);
   _toastTimer = setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+// ─── Theme ────────────────────────────────────────────────────────────────────
+function applyTheme() {
+  const html = document.documentElement;
+  if (currentTheme === 'light') {
+    html.setAttribute('data-theme', 'light');
+    el('themeIcon').textContent = '🌙'; // show moon = switch to dark
+  } else {
+    html.removeAttribute('data-theme');
+    el('themeIcon').textContent = '☀️'; // show sun = switch to light
+  }
+}
+
+function toggleTheme() {
+  currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('vg_theme', currentTheme);
+  applyTheme();
 }
 
 // ─── Language ─────────────────────────────────────────────────────────────────
@@ -371,7 +396,11 @@ function setupBackToTop() {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 function init() {
   applyLang();
+  applyTheme();
   showSection('hero');
+
+  // Theme toggle
+  el('themeToggle').addEventListener('click', toggleTheme);
 
   // Language toggle
   el('langToggle').addEventListener('click', toggleLang);

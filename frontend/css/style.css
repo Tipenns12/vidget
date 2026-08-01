@@ -13,7 +13,6 @@
   --border2:   rgba(255,255,255,0.14);
   --text:      #f0f0f8;
   --text2:     #a0a0b8;
-  --text3:     #6060788;
   --primary:   #6366f1;
   --primary-h: #4f52d9;
   --accent:    #8b5cf6;
@@ -22,9 +21,46 @@
   --radius:    16px;
   --radius-sm: 10px;
   --shadow:    0 4px 32px rgba(0,0,0,0.4);
-  --glow:      0 0 40px rgba(99,102,241,0.15);
   --font:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
 }
+
+/* ── Light Mode ───────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg:     #f8f8fc;
+  --bg2:    #ffffff;
+  --bg3:    #f0f0f8;
+  --border:  rgba(0,0,0,0.08);
+  --border2: rgba(0,0,0,0.14);
+  --text:   #0a0a0f;
+  --text2:  #5050688;
+  --shadow: 0 4px 32px rgba(0,0,0,0.08);
+}
+[data-theme="light"] .text2 { color: #606080; }
+[data-theme="light"] .hero h1 {
+  background: linear-gradient(135deg, #111 0%, #6366f1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+[data-theme="light"] #urlInput::placeholder { color: #a0a0c0; }
+[data-theme="light"] .header {
+  background: rgba(248,248,252,0.85);
+}
+[data-theme="light"] .badge {
+  background: rgba(99,102,241,0.08);
+  color: #6366f1;
+}
+[data-theme="light"] .platforms span {
+  background: #f0f0f8;
+  border-color: rgba(0,0,0,0.1);
+  color: #606080;
+}
+[data-theme="light"] .hero-sub { color: #606080; }
+[data-theme="light"] .video-stats { color: #606080; }
+[data-theme="light"] .loading-sub { color: #808098; }
+[data-theme="light"] .features { background: #f0f0f8; }
+[data-theme="light"] .footer { background: #f0f0f8; }
+
 
 html { scroll-behavior: smooth; }
 
@@ -35,6 +71,7 @@ body {
   min-height: 100vh;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  transition: background 0.25s, color 0.25s;
 }
 
 img { max-width: 100%; display: block; }
@@ -85,6 +122,21 @@ a { text-decoration: none; color: inherit; }
   transition: all 0.2s;
 }
 .btn-lang:hover { border-color: var(--primary); color: var(--text); }
+
+.btn-theme {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  transition: all 0.2s;
+  line-height: 1;
+}
+.btn-theme:hover { border-color: var(--primary); transform: rotate(20deg); }
 
 /* ── Hero ─────────────────────────────────────────────────────────────────── */
 .hero {
