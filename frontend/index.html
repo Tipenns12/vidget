@@ -8,9 +8,12 @@
   <meta property="og:title" content="VidGet — Download Video dari Mana Saja" />
   <meta property="og:description" content="Download video dari 1000+ platform dalam hitungan detik. Gratis & tanpa batas." />
   <title>VidGet — Download Video dari Mana Saja</title>
-  <!-- Favicon -->
+
+  <!-- Favicon & PWA Manifest -->
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="shortcut icon" href="/favicon.svg" />
+  <link rel="manifest" href="/manifest.json" />
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/style.css" />
@@ -34,9 +37,15 @@
       <span>VidGet</span>
     </a>
     <nav class="header-nav">
+      <!-- PWA Install Button -->
+      <button id="pwaInstallBtn" class="btn-pwa hidden" type="button">
+        📲 <span data-i18n="btn_install_app">Install App</span>
+      </button>
+      <!-- Theme Toggle -->
       <button id="themeToggle" class="btn-theme" aria-label="Toggle theme" title="Ganti tema">
         <span id="themeIcon">☀️</span>
       </button>
+      <!-- Lang Toggle -->
       <button id="langToggle" class="btn-lang" aria-label="Toggle language">
         <span id="langFlag">🇮🇩</span> <span id="langLabel">ID</span>
       </button>
@@ -47,12 +56,30 @@
 <!-- ═══ MAIN ══════════════════════════════════════════════════════════════════ -->
 <main>
 
+  <!-- ── CATEGORY NAV BAR ─────────────────────────────────────────────────── -->
+  <nav class="category-nav">
+    <div class="category-inner">
+      <button class="cat-btn active" data-cat="all">
+        <span>🎬</span> <span data-i18n="cat_all">Semua Video</span>
+      </button>
+      <button class="cat-btn" data-cat="youtube">
+        <span>▶️</span> <span>YouTube</span>
+      </button>
+      <button class="cat-btn" data-cat="tiktok">
+        <span>🎵</span> <span>TikTok (No WM)</span>
+      </button>
+      <button class="cat-btn" data-cat="instagram">
+        <span>📸</span> <span>Instagram</span>
+      </button>
+    </div>
+  </nav>
+
   <!-- ── HERO SECTION ─────────────────────────────────────────────────────── -->
   <section class="hero" id="heroSection">
     <div class="hero-content">
-      <div class="badge" data-i18n="badge">✨ Gratis & Tanpa Batas</div>
-      <h1 data-i18n="hero_title">Download Video dari Mana Saja</h1>
-      <p class="hero-sub" data-i18n="hero_sub">YouTube, TikTok, Instagram, Twitter, Facebook, dan 1000+ platform lainnya</p>
+      <div class="badge" id="heroBadge" data-i18n="badge">✨ Gratis & Tanpa Batas</div>
+      <h1 id="heroTitle" data-i18n="hero_title">Download Video dari Mana Saja</h1>
+      <p class="hero-sub" id="heroSub" data-i18n="hero_sub">YouTube, TikTok, Instagram, Twitter, Facebook, dan 1000+ platform lainnya</p>
 
       <!-- Search Box -->
       <div class="search-box" id="searchBox">
@@ -130,7 +157,10 @@
           <span class="duration-badge" id="durationBadge"></span>
         </div>
         <div class="video-meta">
-          <p class="platform-badge" id="platformBadge"></p>
+          <div class="badges-row">
+            <span class="platform-badge" id="platformBadge"></span>
+            <span class="nowm-badge hidden" id="nowmBadge">✨ Tanpa Watermark</span>
+          </div>
           <h2 class="video-title" id="videoTitle"></h2>
           <div class="video-stats" id="videoStats"></div>
         </div>
@@ -147,12 +177,31 @@
       <div class="tab-content" id="contentVideo">
         <p class="quality-label" data-i18n="quality_label">Pilih Kualitas:</p>
         <div class="quality-grid" id="qualityGrid"></div>
-        <button class="btn-download" id="downloadVideoBtn">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-          </svg>
-          <span data-i18n="btn_download_video">Download Video (MP4)</span>
-        </button>
+
+        <!-- Action Row: Download + Copy Link + QR Code -->
+        <div class="action-buttons-row">
+          <button class="btn-download" id="downloadVideoBtn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+            </svg>
+            <span data-i18n="btn_download_video">Download Video (MP4)</span>
+          </button>
+          <button class="btn-sec" id="copyLinkBtn" title="Salin Link Download Direct">
+            🔗 <span data-i18n="btn_copy_link">Salin Link</span>
+          </button>
+          <button class="btn-sec" id="qrBtn" title="Tampilkan QR Code untuk Scan dari HP">
+            📱 <span>Scan HP</span>
+          </button>
+        </div>
+
+        <!-- QR Code Modal Box -->
+        <div class="qr-box hidden" id="qrBox">
+          <p class="qr-title">📱 Scan QR Code dari Kamera HP:</p>
+          <div class="qr-img-wrap">
+            <img id="qrImg" src="" alt="QR Code Download" />
+          </div>
+          <p class="qr-sub">Scan untuk langsung mendownload video ini di HP Anda.</p>
+        </div>
       </div>
 
       <!-- Audio Tab Content -->
@@ -206,13 +255,13 @@
         </div>
         <div class="feature-card">
           <div class="feature-icon">📱</div>
-          <h3 data-i18n="feat3_title">Ramah Mobile</h3>
-          <p data-i18n="feat3_desc">Tempel link dari HP dengan sekali ketuk. Desain mobile-first.</p>
+          <h3 data-i18n="feat3_title">Ramah Mobile & PWA</h3>
+          <p data-i18n="feat3_desc">Bisa di-install sebagai aplikasi HP. Tempel link dengan sekali ketuk.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">🎯</div>
-          <h3 data-i18n="feat4_title">Pilih Kualitas</h3>
-          <p data-i18n="feat4_desc">Dari 360p hingga 4K. Download MP4 atau ekstrak audio MP3.</p>
+          <h3 data-i18n="feat4_title">Kualitas HD & No WM</h3>
+          <p data-i18n="feat4_desc">Pilih dari 360p hingga 4K. Mendukung TikTok tanpa watermark.</p>
         </div>
       </div>
     </div>
@@ -246,22 +295,51 @@
 
 </main>
 
+<!-- ═══ LEGAL MODAL (Privacy Policy, Terms of Service, Contact) ═══════════════ -->
+<div class="modal-overlay hidden" id="legalModal">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3 id="modalTitle">Judul Halaman</h3>
+      <button class="modal-close" id="modalClose">&times;</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <!-- Dynamic content inserted by JS -->
+    </div>
+  </div>
+</div>
+
 <!-- ═══ FOOTER ═══════════════════════════════════════════════════════════════ -->
 <footer class="footer">
   <div class="footer-inner">
-    <div class="footer-logo">
-      <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
-        <rect width="28" height="28" rx="8" fill="url(#fLogoGrad)"/>
-        <path d="M10 9L19 14L10 19V9Z" fill="white"/>
-        <defs>
-          <linearGradient id="fLogoGrad" x1="0" y1="0" x2="28" y2="28" gradientUnits="userSpaceOnUse">
-            <stop stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/>
-          </linearGradient>
-        </defs>
-      </svg>
-      <span>VidGet</span>
+    <div class="footer-col logo-col">
+      <div class="footer-logo">
+        <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
+          <rect width="28" height="28" rx="8" fill="url(#fLogoGrad)"/>
+          <path d="M10 9L19 14L10 19V9Z" fill="white"/>
+          <defs>
+            <linearGradient id="fLogoGrad" x1="0" y1="0" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span>VidGet</span>
+      </div>
+      <p class="footer-sub">Pengunduh video gratis, cepat, dan aman dari 1000+ platform online.</p>
     </div>
-    <p class="footer-copy">© 2026 VidGet. Gratis untuk digunakan.</p>
+
+    <!-- Legal Links -->
+    <div class="footer-col links-col">
+      <h4>Informasi & Legal</h4>
+      <ul>
+        <li><a href="#" id="linkPrivacy" data-i18n="link_privacy">Kebijakan Privasi</a></li>
+        <li><a href="#" id="linkTerms" data-i18n="link_terms">Syarat & Ketentuan</a></li>
+        <li><a href="#" id="linkContact" data-i18n="link_contact">Kontak Kami</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="footer-bottom">
+    <p class="footer-copy">© 2026 VidGet. All rights reserved.</p>
   </div>
 </footer>
 

@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   VidGet — app.js  (v2)
+   VidGet — app.js  (v3 - Full Features: PWA, Categories, QR, Copy Link, Legal)
    ═══════════════════════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -19,6 +19,8 @@ const LANG = {
     input_placeholder:  'Tempel link video di sini...',
     btn_paste:          'Tempel',
     btn_analyze:        'Download',
+    btn_install_app:    'Install App',
+    cat_all:            'Semua Video',
     loading_text:       'Mengambil info video...',
     tab_video:          '🎬 Video',
     tab_audio:          '🎵 Audio',
@@ -28,23 +30,28 @@ const LANG = {
     btn_download_video: 'Download Video (MP4)',
     btn_download_audio: 'Download Audio (MP3)',
     btn_download_thumb: 'Download Thumbnail',
+    btn_copy_link:      'Salin Link',
     btn_new:            '← Download Video Lain',
     btn_retry:          'Coba Lagi',
     error_title:        'Gagal mengambil video',
     features_title:     'Kenapa VidGet?',
     feat1_title: 'Super Cepat',        feat1_desc: 'Analisis video dalam hitungan detik.',
     feat2_title: '1000+ Platform',     feat2_desc: 'YouTube, TikTok, Instagram, Twitter, Facebook, dan ribuan lainnya.',
-    feat3_title: 'Ramah Mobile',       feat3_desc: 'Tempel link dari HP dengan sekali ketuk. Desain mobile-first.',
-    feat4_title: 'Pilih Kualitas',     feat4_desc: 'Dari 360p hingga 4K. Download MP4 atau ekstrak audio MP3.',
+    feat3_title: 'Ramah Mobile & PWA', feat3_desc: 'Bisa di-install sebagai aplikasi HP. Tempel link dengan sekali ketuk.',
+    feat4_title: 'Kualitas HD & No WM',feat4_desc: 'Dari 360p hingga 4K. Mendukung TikTok tanpa watermark.',
     howto_title: 'Cara Menggunakan',
     step1_title: 'Salin Link',         step1_desc: 'Buka video di aplikasi atau browser, lalu salin linknya.',
     step2_title: 'Tempel & Analisis',  step2_desc: 'Tempel link di kolom di atas. Analisis otomatis dimulai.',
     step3_title: 'Download',           step3_desc: 'Pilih kualitas yang diinginkan lalu klik tombol Download.',
     toast_copied:       '✓ URL ditempel dari clipboard',
+    toast_link_copied:  '✓ Link download direct disalin!',
     toast_clipboard_err:'Akses clipboard diblokir. Ketik URL secara manual.',
     toast_invalid:      '⚠ URL tidak valid',
     toast_dl_start:     '⬇ Download dimulai...',
     toast_no_format:    'Tidak ada format video tersedia',
+    link_privacy:       'Kebijakan Privasi',
+    link_terms:         'Syarat & Ketentuan',
+    link_contact:       'Kontak Kami',
     msg_connecting:     'Menghubungi server...',
     msg_fetching:       'Mengambil info video...',
     msg_processing:     'Memproses data...',
@@ -59,6 +66,8 @@ const LANG = {
     input_placeholder:  'Paste video link here...',
     btn_paste:          'Paste',
     btn_analyze:        'Download',
+    btn_install_app:    'Install App',
+    cat_all:            'All Videos',
     loading_text:       'Fetching video info...',
     tab_video:          '🎬 Video',
     tab_audio:          '🎵 Audio',
@@ -68,23 +77,28 @@ const LANG = {
     btn_download_video: 'Download Video (MP4)',
     btn_download_audio: 'Download Audio (MP3)',
     btn_download_thumb: 'Download Thumbnail',
+    btn_copy_link:      'Copy Link',
     btn_new:            '← Download Another',
     btn_retry:          'Try Again',
     error_title:        'Failed to fetch video',
     features_title:     'Why VidGet?',
     feat1_title: 'Super Fast',         feat1_desc: 'Video analysis in seconds.',
     feat2_title: '1000+ Platforms',    feat2_desc: 'YouTube, TikTok, Instagram, Twitter, Facebook, and thousands more.',
-    feat3_title: 'Mobile Friendly',    feat3_desc: 'Paste link from phone with one tap. Mobile-first design.',
-    feat4_title: 'Choose Quality',     feat4_desc: 'From 360p to 4K. Download MP4 or extract MP3 audio.',
+    feat3_title: 'Mobile & PWA Ready', feat3_desc: 'Installable as a phone app. Paste link with one tap.',
+    feat4_title: 'HD Quality & No WM', feat4_desc: 'From 360p to 4K. Supports TikTok without watermark.',
     howto_title: 'How to Use',
     step1_title: 'Copy Link',          step1_desc: 'Open a video in the app or browser, then copy the link.',
     step2_title: 'Paste & Analyze',    step2_desc: 'Paste the link above. Analysis starts automatically.',
     step3_title: 'Download',           step3_desc: 'Choose quality and click the Download button.',
     toast_copied:       '✓ URL pasted from clipboard',
+    toast_link_copied:  '✓ Direct download link copied!',
     toast_clipboard_err:'Clipboard access blocked. Type URL manually.',
     toast_invalid:      '⚠ Invalid URL',
     toast_dl_start:     '⬇ Download starting...',
     toast_no_format:    'No video formats available',
+    link_privacy:       'Privacy Policy',
+    link_terms:         'Terms of Service',
+    link_contact:       'Contact Us',
     msg_connecting:     'Connecting to server...',
     msg_fetching:       'Fetching video info...',
     msg_processing:     'Processing data...',
@@ -97,13 +111,55 @@ const LANG = {
 // ─── State ────────────────────────────────────────────────────────────────────
 let currentLang      = localStorage.getItem('vg_lang') || 'id';
 let currentTheme     = localStorage.getItem('vg_theme') || 'dark';
+let currentCategory  = 'all';
 let currentVideoInfo = null;
 let selectedFormat   = null;
 let activeTab        = 'video';
+let deferredInstallPrompt = null;
+
+// ─── Category Configurations ──────────────────────────────────────────────────
+const CATEGORIES = {
+  all: {
+    badge: '✨ Gratis & Tanpa Batas',
+    title_id: 'Download Video dari Mana Saja',
+    title_en: 'Download Video from Anywhere',
+    sub_id: 'YouTube, TikTok, Instagram, Twitter, Facebook, dan 1000+ platform lainnya',
+    sub_en: 'YouTube, TikTok, Instagram, Twitter, Facebook, and 1000+ platforms',
+    placeholder_id: 'Tempel link video di sini...',
+    placeholder_en: 'Paste video link here...'
+  },
+  youtube: {
+    badge: '▶️ YouTube Downloader',
+    title_id: 'Download Video & MP3 YouTube',
+    title_en: 'Download YouTube Video & MP3',
+    sub_id: 'Unduh video YouTube Shorts, 1080p, 4K, dan konversi ke MP3 berkualitas tinggi',
+    sub_en: 'Download YouTube Shorts, 1080p, 4K videos, and convert to high quality MP3',
+    placeholder_id: 'Tempel link YouTube di sini (cth: https://youtube.com/watch?...)...',
+    placeholder_en: 'Paste YouTube link here...'
+  },
+  tiktok: {
+    badge: '🎵 TikTok Downloader (No Watermark)',
+    title_id: 'Download Video TikTok Tanpa Watermark',
+    title_en: 'Download TikTok Video Without Watermark',
+    sub_id: 'Simpan video TikTok tanpa logo watermark, cepat, gratis, dan dalam kualitas HD',
+    sub_en: 'Save TikTok videos without watermark logo, fast, free, and in HD quality',
+    placeholder_id: 'Tempel link TikTok di sini (cth: https://tiktok.com/@user/video/...)...',
+    placeholder_en: 'Paste TikTok link here...'
+  },
+  instagram: {
+    badge: '📸 Instagram Downloader',
+    title_id: 'Download Video & Reels Instagram',
+    title_en: 'Download Instagram Video & Reels',
+    sub_id: 'Download Instagram Reels, Video Feed, dan Story secara gratis dan anonim',
+    sub_en: 'Download Instagram Reels, Feed Videos, and Stories for free and anonymously',
+    placeholder_id: 'Tempel link Instagram di sini (cth: https://instagram.com/reel/...)...',
+    placeholder_en: 'Paste Instagram link here...'
+  }
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const el  = (id) => document.getElementById(id);
-const t   = (key) => LANG[currentLang][key] || key;
+const el = (id) => document.getElementById(id);
+const t  = (key) => LANG[currentLang][key] || key;
 
 function isValidUrl(str) {
   try {
@@ -135,10 +191,10 @@ function applyTheme() {
   const html = document.documentElement;
   if (currentTheme === 'light') {
     html.setAttribute('data-theme', 'light');
-    el('themeIcon').textContent = '🌙'; // show moon = switch to dark
+    el('themeIcon').textContent = '🌙';
   } else {
     html.removeAttribute('data-theme');
-    el('themeIcon').textContent = '☀️'; // show sun = switch to light
+    el('themeIcon').textContent = '☀️';
   }
 }
 
@@ -151,16 +207,17 @@ function toggleTheme() {
 // ─── Language ─────────────────────────────────────────────────────────────────
 function applyLang() {
   document.documentElement.lang = currentLang;
-  document.querySelectorAll('[data-i18n]').forEach(el => {
-    const key = el.getAttribute('data-i18n');
-    if (LANG[currentLang][key]) el.textContent = LANG[currentLang][key];
+  document.querySelectorAll('[data-i18n]').forEach(element => {
+    const key = element.getAttribute('data-i18n');
+    if (LANG[currentLang][key]) element.textContent = LANG[currentLang][key];
   });
-  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-    const key = el.getAttribute('data-i18n-placeholder');
-    if (LANG[currentLang][key]) el.placeholder = LANG[currentLang][key];
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(element => {
+    const key = element.getAttribute('data-i18n-placeholder');
+    if (LANG[currentLang][key]) element.placeholder = LANG[currentLang][key];
   });
   el('langFlag').textContent  = currentLang === 'id' ? '🇮🇩' : '🇬🇧';
   el('langLabel').textContent = currentLang === 'id' ? 'ID' : 'EN';
+  applyCategory(currentCategory);
 }
 
 function toggleLang() {
@@ -170,16 +227,30 @@ function toggleLang() {
   if (currentVideoInfo) renderResults(currentVideoInfo);
 }
 
+// ─── Category Selection ───────────────────────────────────────────────────────
+function applyCategory(catKey) {
+  currentCategory = catKey;
+  const cfg = CATEGORIES[catKey] || CATEGORIES.all;
+
+  el('heroBadge').textContent = cfg.badge;
+  el('heroTitle').textContent = currentLang === 'id' ? cfg.title_id : cfg.title_en;
+  el('heroSub').textContent   = currentLang === 'id' ? cfg.sub_id   : cfg.sub_en;
+  el('urlInput').placeholder  = currentLang === 'id' ? cfg.placeholder_id : cfg.placeholder_en;
+
+  document.querySelectorAll('.cat-btn').forEach(btn => {
+    const active = btn.getAttribute('data-cat') === catKey;
+    btn.classList.toggle('active', active);
+  });
+}
+
 // ─── Section Control ──────────────────────────────────────────────────────────
 function showSection(name) {
   const hero    = el('heroSection');
   const loading = el('loadingSection');
   const results = el('resultsSection');
-  // hide all
   hero.classList.add('hidden');
   loading.classList.add('hidden');
   results.classList.add('hidden');
-  // show target
   if (name === 'hero')    hero.classList.remove('hidden');
   if (name === 'loading') loading.classList.remove('hidden');
   if (name === 'results') results.classList.remove('hidden');
@@ -197,11 +268,9 @@ async function handleAnalyze() {
     return;
   }
 
-  // Show loading
   showSection('loading');
   el('loadingSection').scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-  // Animated loading messages
   const msgs = [t('msg_connecting'), t('msg_fetching'), t('msg_processing'), t('msg_almost')];
   let msgIdx = 0, secs = 0;
   const msgEl   = el('loadingMsg');
@@ -248,24 +317,28 @@ function renderResults(info) {
   el('errorCard').classList.add('hidden');
   el('resultCard').classList.remove('hidden');
 
-  // Thumbnail
   const thumb = info.thumbnail || '';
-  el('thumbImg').src      = thumb;
-  el('thumbPreview').src  = thumb;
-  el('thumbImg').alt      = info.title || 'Thumbnail';
+  el('thumbImg').src     = thumb;
+  el('thumbPreview').src = thumb;
+  el('thumbImg').alt     = info.title || 'Thumbnail';
 
-  // Duration
   const dur = el('durationBadge');
   dur.textContent = info.duration_string || '';
   dur.style.display = info.duration_string ? 'block' : 'none';
 
-  // Platform
-  el('platformBadge').textContent = info.platform || '';
+  // Platform & TikTok No-WM badge
+  const platform = info.platform || '';
+  el('platformBadge').textContent = platform;
 
-  // Title
+  const isTikTok = platform.toLowerCase().includes('tiktok') || (info.url && info.url.includes('tiktok'));
+  if (isTikTok) {
+    el('nowmBadge').classList.remove('hidden');
+  } else {
+    el('nowmBadge').classList.add('hidden');
+  }
+
+  // Title & Stats
   el('videoTitle').textContent = info.title || 'Video';
-
-  // Stats
   const stats = [];
   if (info.uploader)   stats.push('👤 ' + info.uploader);
   if (info.view_count) stats.push('👁 ' + formatNum(info.view_count));
@@ -274,7 +347,9 @@ function renderResults(info) {
   // Quality grid
   renderQualityGrid(info.video_formats || []);
 
-  // Reset to video tab
+  // Hide QR box initially
+  el('qrBox').classList.add('hidden');
+
   switchTab('video');
 }
 
@@ -331,7 +406,7 @@ function switchTab(name) {
   });
 }
 
-// ─── Downloads ────────────────────────────────────────────────────────────────
+// ─── Downloads & Actions ──────────────────────────────────────────────────────
 function triggerDownload(url) {
   const a = document.createElement('a');
   a.href   = url;
@@ -350,6 +425,31 @@ function buildDlUrl(type, formatId) {
   return '/api/download?' + p.toString();
 }
 
+function copyDirectLink() {
+  const dlUrl = buildDlUrl('video', selectedFormat?.format_id);
+  if (!dlUrl) return;
+  const fullUrl = window.location.origin + dlUrl;
+  navigator.clipboard.writeText(fullUrl).then(() => {
+    showToast(t('toast_link_copied'), 'success');
+  }).catch(() => {
+    showToast(fullUrl);
+  });
+}
+
+function toggleQrCode() {
+  const qrBox = el('qrBox');
+  if (!qrBox.classList.contains('hidden')) {
+    qrBox.classList.add('hidden');
+    return;
+  }
+  const dlUrl = buildDlUrl('video', selectedFormat?.format_id);
+  if (!dlUrl) return;
+  const fullUrl = encodeURIComponent(window.location.origin + dlUrl);
+  el('qrImg').src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${fullUrl}`;
+  qrBox.classList.remove('hidden');
+  qrBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
 // ─── Paste & Input ────────────────────────────────────────────────────────────
 async function pasteFromClipboard() {
   try {
@@ -358,7 +458,6 @@ async function pasteFromClipboard() {
       el('urlInput').value = text.trim();
       updateClearBtn();
       showToast(t('toast_copied'), 'success');
-      // auto-analyze immediately after paste
       setTimeout(handleAnalyze, 200);
     } else if (text) {
       el('urlInput').value = text.trim();
@@ -375,13 +474,103 @@ function updateClearBtn() {
   el('clearBtn').classList.toggle('hidden', !val);
 }
 
-// Long-press paste support
 function setupLongPress() {
   const input  = el('urlInput');
   let   timer  = null;
   input.addEventListener('touchstart', () => { timer = setTimeout(pasteFromClipboard, 600); }, { passive: true });
   input.addEventListener('touchend',   () => clearTimeout(timer));
   input.addEventListener('touchmove',  () => clearTimeout(timer));
+}
+
+// ─── PWA Installer ───────────────────────────────────────────────────────────
+function setupPWA() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    el('pwaInstallBtn').classList.remove('hidden');
+  });
+
+  el('pwaInstallBtn').addEventListener('click', async () => {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    const { outcome } = await deferredInstallPrompt.userChoice;
+    if (outcome === 'accepted') {
+      el('pwaInstallBtn').classList.add('hidden');
+    }
+    deferredInstallPrompt = null;
+  });
+}
+
+// ─── Legal Modal ──────────────────────────────────────────────────────────────
+const LEGAL_CONTENT = {
+  privacy: {
+    title_id: 'Kebijakan Privasi', title_en: 'Privacy Policy',
+    body_id: `
+      <h4>1. Pengumpulan Informasi</h4>
+      <p>VidGet tidak menyimpan data pribadi pengguna. URL video yang dimasukkan hanya diproses secara instan di memori server untuk pengunduhan file.</p>
+      <h4>2. Cookie & Penyimpanan Lokal</h4>
+      <p>Kami hanya menggunakan LocalStorage browser untuk menyimpan preferensi tema (gelap/terang) dan bahasa (Indonesia/Inggris) Anda.</p>
+      <h4>3. Keamanan Data</h4>
+      <p>Koneksi ke VidGet dilindungi oleh enkripsi SSL/TLS standar industri.</p>
+    `,
+    body_en: `
+      <h4>1. Information Collection</h4>
+      <p>VidGet does not collect personal user data. Video URLs entered are only processed instantly in server memory for file download.</p>
+      <h4>2. Cookies & Local Storage</h4>
+      <p>We only use browser LocalStorage to save your theme preference (dark/light) and language (Indonesian/English).</p>
+      <h4>3. Data Security</h4>
+      <p>Connections to VidGet are secured using industry-standard SSL/TLS encryption.</p>
+    `
+  },
+  terms: {
+    title_id: 'Syarat & Ketentuan', title_en: 'Terms of Service',
+    body_id: `
+      <h4>1. Ketentuan Penggunaan</h4>
+      <p>Layanan VidGet disediakan secara gratis untuk penggunaan pribadi. Pengguna bertanggung jawab penuh atas materi video yang diunduh.</p>
+      <h4>2. Hak Cipta</h4>
+      <p>VidGet menghormati hak cipta pemilik konten. Jangan mengunduh atau mendistribusikan konten yang dilindungi hak cipta tanpa izin.</p>
+      <h4>3. Penafian</h4>
+      <p>VidGet tidak berafiliasi dengan YouTube, TikTok, Instagram, Facebook, atau platform pihak ketiga manapun.</p>
+    `,
+    body_en: `
+      <h4>1. Terms of Use</h4>
+      <p>VidGet service is provided free for personal use. Users are solely responsible for downloaded media content.</p>
+      <h4>2. Copyright</h4>
+      <p>VidGet respects copyright laws. Please do not download or distribute copyrighted content without authorization.</p>
+      <h4>3. Disclaimer</h4>
+      <p>VidGet is not affiliated with YouTube, TikTok, Instagram, Facebook, or any third-party platform.</p>
+    `
+  },
+  contact: {
+    title_id: 'Kontak Kami', title_en: 'Contact Us',
+    body_id: `
+      <h4>Hubungi Tim VidGet</h4>
+      <p>Jika Anda memiliki pertanyaan, saran, atau laporan bug, silakan hubungi kami di:</p>
+      <p>📧 Email: <strong>support@vidget.app</strong></p>
+      <p>⚡ Respon cepat dalam 24 jam kerja.</p>
+    `,
+    body_en: `
+      <h4>Contact VidGet Team</h4>
+      <p>If you have questions, feedback, or bug reports, please reach out to us at:</p>
+      <p>📧 Email: <strong>support@vidget.app</strong></p>
+      <p>⚡ Fast response within 24 business hours.</p>
+    `
+  }
+};
+
+function openLegalModal(key) {
+  const cfg = LEGAL_CONTENT[key];
+  if (!cfg) return;
+  el('modalTitle').textContent = currentLang === 'id' ? cfg.title_id : cfg.title_en;
+  el('modalBody').innerHTML   = currentLang === 'id' ? cfg.body_id  : cfg.body_en;
+  el('legalModal').classList.remove('hidden');
+}
+
+function closeLegalModal() {
+  el('legalModal').classList.add('hidden');
 }
 
 // ─── Back to Top ──────────────────────────────────────────────────────────────
@@ -399,44 +588,38 @@ function init() {
   applyTheme();
   showSection('hero');
 
-  // Theme toggle
+  // Controls
   el('themeToggle').addEventListener('click', toggleTheme);
-
-  // Language toggle
   el('langToggle').addEventListener('click', toggleLang);
+
+  // Category buttons
+  document.querySelectorAll('.cat-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cat = btn.getAttribute('data-cat');
+      applyCategory(cat);
+    });
+  });
 
   // URL Input
   const input = el('urlInput');
-
   input.addEventListener('input', updateClearBtn);
-
-  // Auto-analyze on paste (Ctrl+V or right-click paste)
   input.addEventListener('paste', () => {
     setTimeout(() => {
       updateClearBtn();
       const val = input.value.trim();
-      if (val && isValidUrl(val)) {
-        setTimeout(handleAnalyze, 300);
-      }
+      if (val && isValidUrl(val)) setTimeout(handleAnalyze, 300);
     }, 50);
   });
-
-  // Enter key
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); handleAnalyze(); }
   });
 
-  // Paste button
   el('pasteBtn').addEventListener('click', pasteFromClipboard);
-
-  // Clear button
   el('clearBtn').addEventListener('click', () => {
     input.value = '';
     updateClearBtn();
     input.focus();
   });
-
-  // Analyze button
   el('analyzeBtn').addEventListener('click', handleAnalyze);
 
   // Tabs
@@ -444,7 +627,7 @@ function init() {
   el('tabAudio').addEventListener('click', () => switchTab('audio'));
   el('tabThumb').addEventListener('click', () => switchTab('thumb'));
 
-  // Download buttons
+  // Download & Actions
   el('downloadVideoBtn').addEventListener('click', () => {
     const url = buildDlUrl('video', selectedFormat?.format_id);
     if (url) triggerDownload(url);
@@ -458,7 +641,10 @@ function init() {
     if (url) triggerDownload(url);
   });
 
-  // New download / retry
+  el('copyLinkBtn').addEventListener('click', copyDirectLink);
+  el('qrBtn').addEventListener('click', toggleQrCode);
+
+  // New download & Retry
   el('newDownloadBtn').addEventListener('click', () => {
     currentVideoInfo = null;
     selectedFormat   = null;
@@ -468,17 +654,23 @@ function init() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setTimeout(() => input.focus(), 400);
   });
-
   el('retryBtn').addEventListener('click', () => {
     showSection('hero');
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setTimeout(() => input.focus(), 400);
   });
 
-  // Long press paste (mobile)
-  setupLongPress();
+  // Legal Modal
+  el('linkPrivacy').addEventListener('click', (e) => { e.preventDefault(); openLegalModal('privacy'); });
+  el('linkTerms').addEventListener('click',   (e) => { e.preventDefault(); openLegalModal('terms'); });
+  el('linkContact').addEventListener('click', (e) => { e.preventDefault(); openLegalModal('contact'); });
+  el('modalClose').addEventListener('click', closeLegalModal);
+  el('legalModal').addEventListener('click', (e) => {
+    if (e.target === el('legalModal')) closeLegalModal();
+  });
 
-  // Back to top
+  setupLongPress();
+  setupPWA();
   setupBackToTop();
 }
 

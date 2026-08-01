@@ -1,0 +1,17 @@
+{
+  "name": "VidGet — Video Downloader",
+  "short_name": "VidGet",
+  "description": "Download video dari 1000+ platform gratis dan cepat",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#6366f1",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
