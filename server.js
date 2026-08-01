@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const { exec, spawn } = require('child_process');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 
 const app = express();
 
@@ -103,20 +105,31 @@ app.post('/api/info', async (req, res) => {
 
       const videoFormats = allFormats
         .filter(f => f.vcodec && f.vcodec !== 'none' && f.height)
-        .map(f => ({
-          format_id: f.format_id,
-          ext: f.ext || 'mp4',
-          height: f.height,
-          width: f.width,
-          fps: f.fps,
-          vcodec: f.vcodec,
-          acodec: f.acodec,
-          filesize: f.filesize || f.filesize_approx || null,
-          filesize_str: formatFileSize(f.filesize || f.filesize_approx),
-          format_note: f.format_note || `${f.height}p`,
-          tbr: f.tbr,
-          has_audio: f.acodec && f.acodec !== 'none'
-        }))
+        .map(f => {
+          let sz = f.filesize || f.filesize_approx;
+          // If DASH video-only, estimate filesize from bitrate & duration
+          if (!sz && f.tbr && info.duration) {
+            sz = Math.round((f.tbr * 1024 * info.duration) / 8);
+          }
+          // Add estimated audio stream size (~128kbps = 16KB/s) if stream is video-only
+          if (sz && (!f.acodec || f.acodec === 'none') && info.duration) {
+            sz += Math.round(16000 * info.duration);
+          }
+          return {
+            format_id: f.format_id,
+            ext: 'mp4',
+            height: f.height,
+            width: f.width,
+            fps: f.fps,
+            vcodec: f.vcodec,
+            acodec: f.acodec,
+            filesize: sz || null,
+            filesize_str: formatFileSize(sz),
+            format_note: f.format_note || `${f.height}p`,
+            tbr: f.tbr,
+            has_audio: f.acodec && f.acodec !== 'none'
+          };
+        })
         .sort((a, b) => (b.height || 0) - (a.height || 0))
         .filter((f, i, arr) => i === 0 || f.height !== arr[i - 1].height);
 
@@ -162,6 +175,7 @@ app.post('/api/info', async (req, res) => {
 });
 
 // ─── API: Download Stream ──────────────────────────────────────────────────────
+// ─── API: Download File ────────────────────────────────────────────────────────
 app.get('/api/download', async (req, res) => {
   const { url, format_id, type, title } = req.query;
   if (!url) return res.status(400).send('URL is required');
@@ -171,15 +185,7 @@ app.get('/api/download', async (req, res) => {
     .trim()
     .substring(0, 100) || 'video';
 
-  let args = [];
-  let contentType = 'application/octet-stream';
-  let filename = safeTitle;
-
-  if (type === 'audio') {
-    args = ['--extract-audio', '--audio-format', 'mp3', '--audio-quality', '0', '-o', '-', url];
-    contentType = 'audio/mpeg';
-    filename = `${safeTitle}.mp3`;
-  } else if (type === 'thumbnail') {
+  if (type === 'thumbnail') {
     exec(`yt-dlp ${YTDLP_BASE_FLAGS} --dump-json --no-playlist "${sanitizeUrl(url)}"`,
       { maxBuffer: 10 * 1024 * 1024, timeout: 20000 }, (err, stdout) => {
         if (err) return res.status(500).send('Failed');
@@ -189,27 +195,42 @@ app.get('/api/download', async (req, res) => {
         } catch (e) { res.status(500).send('Failed to get thumbnail'); }
       });
     return;
-  } else {
-    const formatArg = format_id
-      ? `${format_id}+bestaudio[ext=m4a]/bestaudio/${format_id}`
-      : 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best';
-    args = ['-f', formatArg, '--merge-output-format', 'mp4', '-o', '-', url];
-    contentType = 'video/mp4';
-    filename = `${safeTitle}.mp4`;
   }
 
-  res.setHeader('Content-Type', contentType);
-  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+  const tmpId = `vg_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
-  const ytdlp = spawn('yt-dlp', args);
-  ytdlp.stdout.pipe(res);
-  ytdlp.stderr.on('data', (data) => process.stderr.write(`[yt-dlp] ${data}`));
-  ytdlp.on('error', (err) => {
-    console.error('yt-dlp spawn error:', err);
-    if (!res.headersSent) res.status(500).send('Download failed');
-  });
-  req.on('close', () => ytdlp.kill('SIGTERM'));
-  res.on('error', () => ytdlp.kill('SIGTERM'));
+  if (type === 'audio') {
+    const tmpFile = path.join(os.tmpdir(), `${tmpId}.mp3`);
+    const cmd = `yt-dlp ${YTDLP_BASE_FLAGS} --extract-audio --audio-format mp3 --audio-quality 0 -o "${tmpFile}" "${sanitizeUrl(url)}"`;
+
+    exec(cmd, { maxBuffer: 50 * 1024 * 1024, timeout: 180000 }, (err) => {
+      if (err || !fs.existsSync(tmpFile)) {
+        if (!res.headersSent) res.status(500).send('Download audio failed');
+        return;
+      }
+      res.download(tmpFile, `${safeTitle}.mp3`, () => {
+        fs.unlink(tmpFile, () => {});
+      });
+    });
+  } else {
+    // Video: select requested format + bestaudio, merge into compatible mp4
+    const formatArg = format_id
+      ? `${format_id}+bestaudio[ext=m4a]/bestaudio/${format_id}/best`
+      : 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best';
+
+    const tmpFile = path.join(os.tmpdir(), `${tmpId}.mp4`);
+    const cmd = `yt-dlp ${YTDLP_BASE_FLAGS} -f "${formatArg}" --merge-output-format mp4 -o "${tmpFile}" "${sanitizeUrl(url)}"`;
+
+    exec(cmd, { maxBuffer: 50 * 1024 * 1024, timeout: 300000 }, (err) => {
+      if (err || !fs.existsSync(tmpFile)) {
+        if (!res.headersSent) res.status(500).send('Download video failed');
+        return;
+      }
+      res.download(tmpFile, `${safeTitle}.mp4`, () => {
+        fs.unlink(tmpFile, () => {});
+      });
+    });
+  }
 });
 
 // ─── API: Batch Info ───────────────────────────────────────────────────────────
