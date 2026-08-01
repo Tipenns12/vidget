@@ -161,9 +161,16 @@ const CATEGORIES = {
 const el = (id) => document.getElementById(id);
 const t  = (key) => LANG[currentLang][key] || key;
 
+function extractUrl(str) {
+  if (!str) return '';
+  const match = str.match(/https?:\/\/[^\s"']+/i);
+  return match ? match[0].trim() : str.trim();
+}
+
 function isValidUrl(str) {
   try {
-    const u = new URL(str.trim());
+    const clean = extractUrl(str);
+    const u = new URL(clean);
     return u.protocol === 'http:' || u.protocol === 'https:';
   } catch { return false; }
 }
@@ -259,10 +266,14 @@ function showSection(name) {
 // ─── Analyze ──────────────────────────────────────────────────────────────────
 async function handleAnalyze() {
   const input = el('urlInput');
-  const url   = input.value.trim();
+  let raw = input.value.trim();
 
-  if (!url) { input.focus(); return; }
-  if (!isValidUrl(url)) {
+  if (!raw) { input.focus(); return; }
+
+  const url = extractUrl(raw);
+  if (url) input.value = url; // Clean the input field to show only the URL
+
+  if (!url || !isValidUrl(url)) {
     showToast(t('toast_invalid'), 'error');
     input.focus();
     return;
@@ -454,15 +465,16 @@ function toggleQrCode() {
 async function pasteFromClipboard() {
   try {
     const text = await navigator.clipboard.readText();
-    if (text && isValidUrl(text.trim())) {
-      el('urlInput').value = text.trim();
+    const cleanUrl = extractUrl(text);
+    if (cleanUrl && isValidUrl(cleanUrl)) {
+      el('urlInput').value = cleanUrl;
       updateClearBtn();
       showToast(t('toast_copied'), 'success');
-      setTimeout(handleAnalyze, 200);
+      setTimeout(handleAnalyze, 150);
     } else if (text) {
       el('urlInput').value = text.trim();
       updateClearBtn();
-      showToast(t('toast_copied'));
+      showToast(t('toast_invalid'), 'error');
     }
   } catch {
     showToast(t('toast_clipboard_err'), 'error');
@@ -603,12 +615,17 @@ function init() {
   // URL Input
   const input = el('urlInput');
   input.addEventListener('input', updateClearBtn);
-  input.addEventListener('paste', () => {
+  input.addEventListener('paste', (e) => {
+    const pastedText = e.clipboardData ? e.clipboardData.getData('text') : '';
     setTimeout(() => {
+      const val = input.value.trim() || pastedText.trim();
+      const cleanUrl = extractUrl(val);
+      if (cleanUrl) input.value = cleanUrl;
       updateClearBtn();
-      const val = input.value.trim();
-      if (val && isValidUrl(val)) setTimeout(handleAnalyze, 300);
-    }, 50);
+      if (cleanUrl && isValidUrl(cleanUrl)) {
+        setTimeout(handleAnalyze, 150);
+      }
+    }, 60);
   });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); handleAnalyze(); }
