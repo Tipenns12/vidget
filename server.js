@@ -4,6 +4,8 @@ const { exec, spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const axios = require('axios');
+const qs = require('qs');
 
 const app = express();
 
@@ -57,9 +59,88 @@ function formatDuration(seconds) {
   if (!seconds) return null;
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  return `${m}:${String(s).padStart(2, '0')}`;
+  const s = Math.floor(seconds % 60);
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+// ─── Instagram Media Extractor (GraphQL) ──────────────────────────────────────
+async function fetchInstagramMedia(url) {
+  const match = url.match(/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+  if (!match) throw new Error('URL Instagram tidak valid');
+  const shortcode = match[1];
+
+  const resHome = await axios.get('https://www.instagram.com/', {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+    },
+    timeout: 10000
+  });
+
+  const cookies = resHome.headers['set-cookie'] || [];
+  const cookieHeader = cookies.map(c => c.split(';')[0]).join('; ');
+  const csrfMatch = cookieHeader.match(/csrftoken=([^;]+)/);
+  const csrfToken = csrfMatch ? csrfMatch[1] : '';
+
+  const dataBody = qs.stringify({
+    'variables': JSON.stringify({
+      'shortcode': shortcode,
+      'fetch_tagged_user_count': null,
+      'hoisted_comment_id': null,
+      'hoisted_reply_id': null
+    }),
+    'doc_id': '10015901848480474'
+  });
+
+  const resGql = await axios.post("https://www.instagram.com/graphql/query", dataBody, {
+    headers: {
+      'X-CSRFToken': csrfToken,
+      'Cookie': cookieHeader,
+      'X-IG-App-ID': '936619743392459',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Referer': `https://www.instagram.com/p/${shortcode}/`
+    },
+    timeout: 15000
+  });
+
+  const media = resGql.data?.data?.xdt_shortcode_media;
+  if (!media) throw new Error('Media Instagram tidak ditemukan atau bersifat privat');
+
+  const videoUrl = media.video_url || media.video_versions?.[0]?.url;
+  const thumbUrl = media.display_url || media.display_resources?.[0]?.src;
+  const captionNode = media.edge_media_to_caption?.edges?.[0]?.node?.text;
+  const caption = captionNode ? captionNode.replace(/\n/g, ' ').trim() : 'Instagram Video';
+  const uploader = media.owner?.username || 'instagram';
+
+  const formats = [];
+  if (videoUrl) {
+    formats.push({
+      format_id: 'ig_hd',
+      ext: 'mp4',
+      height: 720,
+      width: 1280,
+      fps: 30,
+      filesize_str: 'HD Video',
+      format_note: '720p HD'
+    });
+  }
+
+  return {
+    id: shortcode,
+    title: caption.substring(0, 100),
+    thumbnail: thumbUrl,
+    duration: media.video_duration || 0,
+    duration_string: media.video_duration ? formatDuration(media.video_duration) : null,
+    uploader: '@' + uploader,
+    view_count: media.video_view_count || null,
+    platform: 'Instagram',
+    video_formats: formats,
+    direct_video_url: videoUrl,
+    direct_thumb_url: thumbUrl
+  };
 }
 
 // ─── API: Get Video Info ───────────────────────────────────────────────────────
@@ -72,6 +153,16 @@ app.post('/api/info', async (req, res) => {
     return res.status(500).json({
       error: 'yt-dlp belum terinstall di server ini'
     });
+  }
+
+  if (url.includes('instagram.com')) {
+    try {
+      console.log(`[info] Fetching Instagram GraphQL for: ${url}`);
+      const igData = await fetchInstagramMedia(url);
+      return res.json(igData);
+    } catch (igErr) {
+      console.warn('[info] Instagram GraphQL failed, falling back to yt-dlp:', igErr.message);
+    }
   }
 
   const safeUrl = sanitizeUrl(url);
@@ -177,8 +268,27 @@ app.post('/api/info', async (req, res) => {
 // ─── API: Download Stream ──────────────────────────────────────────────────────
 // ─── API: Download File ────────────────────────────────────────────────────────
 app.get('/api/download', async (req, res) => {
-  const { url, format_id, type, title } = req.query;
+  let { url, format_id, type, title } = req.query;
   if (!url) return res.status(400).send('URL is required');
+
+  // Fast direct handling for Instagram
+  if (url.includes('instagram.com')) {
+    try {
+      const igData = await fetchInstagramMedia(url);
+      if (type === 'thumbnail' && igData.direct_thumb_url) {
+        return res.redirect(igData.direct_thumb_url);
+      }
+      if (igData.direct_video_url) {
+        if (type === 'audio') {
+          url = igData.direct_video_url; // pass direct video stream URL to yt-dlp audio extractor
+        } else {
+          return res.redirect(igData.direct_video_url);
+        }
+      }
+    } catch (igErr) {
+      console.warn('[download] Instagram GraphQL download failed, falling back to yt-dlp:', igErr.message);
+    }
+  }
 
   const safeTitle = (title || 'video')
     .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
