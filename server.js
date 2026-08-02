@@ -467,6 +467,23 @@ app.get('/api/health', async (req, res) => {
   });
 });
 
+// ─── API: Force Update yt-dlp ──────────────────────────────────────────────────
+app.post('/api/update-ytdlp', (req, res) => {
+  console.log('[update] Forcing yt-dlp update...');
+  exec('yt-dlp -U', { timeout: 60000 }, (err, stdout, stderr) => {
+    // Reset cached version so next call re-detects
+    _ytdlpInstalled = null;
+    _ytdlpVersion   = null;
+    if (err) {
+      console.warn('[update] yt-dlp update failed:', stderr || err.message);
+      return res.status(500).json({ ok: false, output: stderr || err.message });
+    }
+    const output = (stdout + stderr).trim();
+    console.log('[update] yt-dlp updated:', output);
+    res.json({ ok: true, output });
+  });
+});
+
 // ─── Catch-all: Serve Frontend ─────────────────────────────────────────────────
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'frontend', 'index.html'));
@@ -480,4 +497,16 @@ app.listen(PORT, () => {
   console.log(`  🚀 Running at http://localhost:${PORT}`);
   console.log('  📦 Powered by yt-dlp');
   console.log('');
+
+  // Auto-update yt-dlp in background after server starts
+  console.log('  🔄 Auto-updating yt-dlp...');
+  exec('yt-dlp -U', { timeout: 60000 }, (err, stdout, stderr) => {
+    _ytdlpInstalled = null;
+    _ytdlpVersion   = null;
+    if (err) {
+      console.warn('  ⚠️  yt-dlp auto-update failed:', (stderr || err.message).substring(0, 100));
+    } else {
+      console.log('  ✅ yt-dlp updated:', (stdout || stderr).split('\n')[0]);
+    }
+  });
 });
