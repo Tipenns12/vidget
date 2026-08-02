@@ -433,6 +433,13 @@ function buildDlUrl(type, formatId) {
   if (!currentVideoInfo?.url) return null;
   const p = new URLSearchParams({ url: currentVideoInfo.url, type, title: currentVideoInfo.title || 'video' });
   if (formatId) p.set('format_id', formatId);
+  // For Instagram: pass cached CDN URL directly to avoid re-fetching (CDN URLs expire quickly)
+  if (type === 'video' && currentVideoInfo.direct_video_url) {
+    p.set('video_src', currentVideoInfo.direct_video_url);
+  }
+  if (type === 'thumbnail' && currentVideoInfo.direct_thumb_url) {
+    p.set('video_src', currentVideoInfo.direct_thumb_url);
+  }
   return '/api/download?' + p.toString();
 }
 

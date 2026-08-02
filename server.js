@@ -265,35 +265,75 @@ app.post('/api/info', async (req, res) => {
   });
 });
 
-// ─── API: Download Stream ──────────────────────────────────────────────────────
 // ─── API: Download File ────────────────────────────────────────────────────────
 app.get('/api/download', async (req, res) => {
-  let { url, format_id, type, title } = req.query;
+  let { url, format_id, type, title, video_src } = req.query;
   if (!url) return res.status(400).send('URL is required');
-
-  // Fast direct handling for Instagram
-  if (url.includes('instagram.com')) {
-    try {
-      const igData = await fetchInstagramMedia(url);
-      if (type === 'thumbnail' && igData.direct_thumb_url) {
-        return res.redirect(igData.direct_thumb_url);
-      }
-      if (igData.direct_video_url) {
-        if (type === 'audio') {
-          url = igData.direct_video_url; // pass direct video stream URL to yt-dlp audio extractor
-        } else {
-          return res.redirect(igData.direct_video_url);
-        }
-      }
-    } catch (igErr) {
-      console.warn('[download] Instagram GraphQL download failed, falling back to yt-dlp:', igErr.message);
-    }
-  }
 
   const safeTitle = (title || 'video')
     .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
     .trim()
     .substring(0, 100) || 'video';
+
+  // ── Fast path: if caller already has the CDN URL (Instagram), proxy-stream it ──
+  if (video_src) {
+    try {
+      const isInstagram = url.includes('instagram.com');
+      const srcHeaders = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        ...(isInstagram ? { 'Referer': 'https://www.instagram.com/' } : {})
+      };
+      const upstream = await axios.get(video_src, {
+        responseType: 'stream',
+        headers: srcHeaders,
+        timeout: 30000
+      });
+      const ext = type === 'thumbnail' ? 'jpg' : 'mp4';
+      const mime = type === 'thumbnail' ? 'image/jpeg' : 'video/mp4';
+      res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.${ext}"`);
+      res.setHeader('Content-Type', mime);
+      if (upstream.headers['content-length']) {
+        res.setHeader('Content-Length', upstream.headers['content-length']);
+      }
+      upstream.data.pipe(res);
+      return;
+    } catch (proxyErr) {
+      console.warn('[download] Proxy CDN failed, trying fallback:', proxyErr.message);
+      // fall through to Instagram GraphQL or yt-dlp
+    }
+  }
+
+  // ── Instagram fallback: re-fetch GraphQL ──────────────────────────────────────
+  if (url.includes('instagram.com')) {
+    try {
+      const igData = await fetchInstagramMedia(url);
+      const cdnUrl = type === 'thumbnail' ? igData.direct_thumb_url : igData.direct_video_url;
+      if (cdnUrl) {
+        const upstream = await axios.get(cdnUrl, {
+          responseType: 'stream',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': 'https://www.instagram.com/'
+          },
+          timeout: 30000
+        });
+        const ext = type === 'thumbnail' ? 'jpg' : 'mp4';
+        const mime = type === 'thumbnail' ? 'image/jpeg' : 'video/mp4';
+        res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.${ext}"`);
+        res.setHeader('Content-Type', mime);
+        if (upstream.headers['content-length']) {
+          res.setHeader('Content-Length', upstream.headers['content-length']);
+        }
+        upstream.data.pipe(res);
+        return;
+      }
+    } catch (igErr) {
+      console.warn('[download] Instagram GraphQL download failed:', igErr.message);
+      if (!res.headersSent) return res.status(502).send('Gagal mengunduh video Instagram. Coba analisis ulang linknya.');
+    }
+  }
+
+  const tmpId = `vg_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
   if (type === 'thumbnail') {
     exec(`yt-dlp ${YTDLP_BASE_FLAGS} --dump-json --no-playlist "${sanitizeUrl(url)}"`,
@@ -306,8 +346,6 @@ app.get('/api/download', async (req, res) => {
       });
     return;
   }
-
-  const tmpId = `vg_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
   if (type === 'audio') {
     const tmpFile = path.join(os.tmpdir(), `${tmpId}.mp3`);
