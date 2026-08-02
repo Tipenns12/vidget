@@ -6,6 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const axios = require('axios');
 const qs = require('qs');
+const crypto = require('crypto');
 
 const app = express();
 
@@ -66,23 +67,22 @@ function formatDuration(seconds) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+function parseIgShortcode(url) {
+  if (!url) return null;
+  const cleanUrl = url.split('?')[0].split('#')[0];
+  const match = cleanUrl.match(/(?:p|reel|reels|tv|share\/reel)\/([A-Za-z0-9_-]+)/i);
+  return match ? match[1] : null;
+}
+
 // ─── Instagram Media Extractor (GraphQL) ──────────────────────────────────────
 async function fetchInstagramMedia(url) {
-  const match = url.match(/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
-  if (!match) throw new Error('URL Instagram tidak valid');
-  const shortcode = match[1];
+  const shortcode = parseIgShortcode(url);
+  if (!shortcode) throw new Error('URL Instagram tidak valid atau format tidak didukung');
 
-  const resHome = await axios.get('https://www.instagram.com/', {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
-    },
-    timeout: 10000
-  });
-
-  const cookies = resHome.headers['set-cookie'] || [];
-  const cookieHeader = cookies.map(c => c.split(';')[0]).join('; ');
-  const csrfMatch = cookieHeader.match(/csrftoken=([^;]+)/);
-  const csrfToken = csrfMatch ? csrfMatch[1] : '';
+  // Generate CSRF token & MID on demand to bypass cloud IP blocks on GET /
+  const randomCsrf = crypto.randomBytes(16).toString('hex');
+  const randomMid = crypto.randomBytes(16).toString('hex');
+  const cookieHeader = `csrftoken=${randomCsrf}; mid=${randomMid}`;
 
   const dataBody = qs.stringify({
     'variables': JSON.stringify({
@@ -96,18 +96,18 @@ async function fetchInstagramMedia(url) {
 
   const resGql = await axios.post("https://www.instagram.com/graphql/query", dataBody, {
     headers: {
-      'X-CSRFToken': csrfToken,
+      'X-CSRFToken': randomCsrf,
       'Cookie': cookieHeader,
       'X-IG-App-ID': '936619743392459',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
       'Content-Type': 'application/x-www-form-urlencoded',
       'Referer': `https://www.instagram.com/p/${shortcode}/`
     },
-    timeout: 15000
+    timeout: 12000
   });
 
   const media = resGql.data?.data?.xdt_shortcode_media;
-  if (!media) throw new Error('Media Instagram tidak ditemukan atau bersifat privat');
+  if (!media) throw new Error('Media Instagram tidak ditemukan atau akun bersifat privat');
 
   const videoUrl = media.video_url || media.video_versions?.[0]?.url;
   const thumbUrl = media.display_url || media.display_resources?.[0]?.src;
