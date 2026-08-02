@@ -296,7 +296,7 @@ async function handleAnalyze() {
 
   try {
     const ctrl = new AbortController();
-    const tOut = setTimeout(() => ctrl.abort(), 40000);
+    const tOut = setTimeout(() => ctrl.abort(), 45000);
 
     const res  = await fetch('/api/info', {
       method:  'POST',
@@ -307,7 +307,31 @@ async function handleAnalyze() {
     clearTimeout(tOut);
 
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || t('err_generic'));
+
+    if (!res.ok) {
+      // Instagram-specific: show detail message and auto-retry once
+      if (data.retry && url.includes('instagram.com')) {
+        showToast('⏳ Instagram sibuk, mencoba lagi...', 'info');
+        await new Promise(r => setTimeout(r, 1500));
+        const res2 = await fetch('/api/info', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
+        });
+        const data2 = await res2.json();
+        if (res2.ok) {
+          currentVideoInfo = { ...data2, url };
+          renderResults(data2);
+          showSection('results');
+          el('resultsSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+          return;
+        }
+        showError(data2.error || data.error || t('err_generic'), data2.details || data.details);
+        showSection('results');
+        return;
+      }
+      throw new Error(data.error || t('err_generic'));
+    }
 
     currentVideoInfo = { ...data, url };
     renderResults(data);
@@ -364,10 +388,20 @@ function renderResults(info) {
   switchTab('video');
 }
 
-function showError(msg) {
+function showError(msg, detail) {
   el('errorCard').classList.remove('hidden');
   el('resultCard').classList.add('hidden');
   el('errorMsg').textContent = msg;
+  // Show detail if available
+  let detailEl = document.getElementById('errorDetail');
+  if (!detailEl) {
+    detailEl = document.createElement('p');
+    detailEl.id = 'errorDetail';
+    detailEl.style.cssText = 'color:var(--text2);font-size:0.82rem;margin-top:6px;';
+    el('errorMsg').after(detailEl);
+  }
+  detailEl.textContent = detail || '';
+  detailEl.style.display = detail ? 'block' : 'none';
 }
 
 function renderQualityGrid(formats) {

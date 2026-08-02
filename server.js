@@ -74,73 +74,99 @@ function parseIgShortcode(url) {
   return match ? match[1] : null;
 }
 
-// ─── Instagram Media Extractor (GraphQL) ──────────────────────────────────────
-async function fetchInstagramMedia(url) {
-  const shortcode = parseIgShortcode(url);
-  if (!shortcode) throw new Error('URL Instagram tidak valid atau format tidak didukung');
+// ─── Instagram doc_id candidates (fallback list) ────────────────────────────
+const IG_DOC_IDS = [
+  '10015901848480474', // primary
+  '8845758582119845',  // fallback 1
+  '9510064595728286',  // fallback 2
+];
 
-  // Generate CSRF token & MID on demand to bypass cloud IP blocks on GET /
+// Try a single Instagram GraphQL request
+async function _igGraphqlAttempt(shortcode, docId) {
   const randomCsrf = crypto.randomBytes(16).toString('hex');
-  const randomMid = crypto.randomBytes(16).toString('hex');
+  const randomMid  = crypto.randomBytes(16).toString('hex');
   const cookieHeader = `csrftoken=${randomCsrf}; mid=${randomMid}`;
 
   const dataBody = qs.stringify({
-    'variables': JSON.stringify({
-      'shortcode': shortcode,
-      'fetch_tagged_user_count': null,
-      'hoisted_comment_id': null,
-      'hoisted_reply_id': null
+    variables: JSON.stringify({
+      shortcode,
+      fetch_tagged_user_count: null,
+      hoisted_comment_id: null,
+      hoisted_reply_id: null
     }),
-    'doc_id': '10015901848480474'
+    doc_id: docId
   });
 
-  const resGql = await axios.post("https://www.instagram.com/graphql/query", dataBody, {
+  const res = await axios.post('https://www.instagram.com/graphql/query', dataBody, {
     headers: {
       'X-CSRFToken': randomCsrf,
       'Cookie': cookieHeader,
       'X-IG-App-ID': '936619743392459',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
       'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': '*/*',
       'Referer': `https://www.instagram.com/p/${shortcode}/`
     },
     timeout: 12000
   });
+  return res.data?.data?.xdt_shortcode_media || null;
+}
 
-  const media = resGql.data?.data?.xdt_shortcode_media;
-  if (!media) throw new Error('Media Instagram tidak ditemukan atau akun bersifat privat');
+// ─── Instagram Media Extractor (GraphQL with retry + fallback doc_ids) ────────
+async function fetchInstagramMedia(url) {
+  const shortcode = parseIgShortcode(url);
+  if (!shortcode) throw new Error('URL Instagram tidak valid atau format tidak didukung');
 
-  const videoUrl = media.video_url || media.video_versions?.[0]?.url;
-  const thumbUrl = media.display_url || media.display_resources?.[0]?.src;
-  const captionNode = media.edge_media_to_caption?.edges?.[0]?.node?.text;
-  const caption = captionNode ? captionNode.replace(/\n/g, ' ').trim() : 'Instagram Video';
-  const uploader = media.owner?.username || 'instagram';
+  let lastErr = null;
 
-  const formats = [];
-  if (videoUrl) {
-    formats.push({
-      format_id: 'ig_hd',
-      ext: 'mp4',
-      height: 720,
-      width: 1280,
-      fps: 30,
-      filesize_str: 'HD Video',
-      format_note: '720p HD'
-    });
+  for (const docId of IG_DOC_IDS) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        console.log(`[ig] shortcode=${shortcode} docId=${docId} attempt=${attempt}`);
+        const media = await _igGraphqlAttempt(shortcode, docId);
+        if (media) {
+          const videoUrl = media.video_url || media.video_versions?.[0]?.url;
+          const thumbUrl = media.display_url || media.display_resources?.[0]?.src;
+          const captionNode = media.edge_media_to_caption?.edges?.[0]?.node?.text;
+          const caption = captionNode ? captionNode.replace(/\n/g, ' ').trim() : 'Instagram Video';
+          const uploader = media.owner?.username || 'instagram';
+
+          const formats = [];
+          if (videoUrl) {
+            formats.push({
+              format_id: 'ig_hd',
+              ext: 'mp4',
+              height: 720,
+              width: 1280,
+              fps: 30,
+              filesize_str: 'HD Video',
+              format_note: '720p HD'
+            });
+          }
+
+          return {
+            id: shortcode,
+            title: caption.substring(0, 100),
+            thumbnail: thumbUrl,
+            duration: media.video_duration || 0,
+            duration_string: media.video_duration ? formatDuration(media.video_duration) : null,
+            uploader: '@' + uploader,
+            view_count: media.video_view_count || null,
+            platform: 'Instagram',
+            video_formats: formats,
+            direct_video_url: videoUrl,
+            direct_thumb_url: thumbUrl
+          };
+        }
+      } catch (e) {
+        lastErr = e;
+        console.warn(`[ig] failed docId=${docId} attempt=${attempt}: ${e.message}`);
+        if (attempt === 1) await new Promise(r => setTimeout(r, 800));
+      }
+    }
   }
 
-  return {
-    id: shortcode,
-    title: caption.substring(0, 100),
-    thumbnail: thumbUrl,
-    duration: media.video_duration || 0,
-    duration_string: media.video_duration ? formatDuration(media.video_duration) : null,
-    uploader: '@' + uploader,
-    view_count: media.video_view_count || null,
-    platform: 'Instagram',
-    video_formats: formats,
-    direct_video_url: videoUrl,
-    direct_thumb_url: thumbUrl
-  };
+  throw lastErr || new Error('Instagram: semua metode gagal');
 }
 
 // ─── API: Get Video Info ───────────────────────────────────────────────────────
@@ -157,11 +183,19 @@ app.post('/api/info', async (req, res) => {
 
   if (url.includes('instagram.com')) {
     try {
-      console.log(`[info] Fetching Instagram GraphQL for: ${url}`);
+      console.log(`[info] Fetching Instagram for: ${url}`);
       const igData = await fetchInstagramMedia(url);
       return res.json(igData);
     } catch (igErr) {
-      console.warn('[info] Instagram GraphQL failed, falling back to yt-dlp:', igErr.message);
+      console.warn('[info] Instagram failed:', igErr.message);
+      // Return Instagram-specific friendly error — don't fall through to yt-dlp
+      return res.status(502).json({
+        error: 'Gagal mengambil video Instagram',
+        details: igErr.message.includes('private') || igErr.message.includes('privat')
+          ? 'Akun atau postingan ini bersifat privat'
+          : 'Instagram membatasi akses saat ini. Coba lagi dalam beberapa detik.',
+        retry: true
+      });
     }
   }
 
